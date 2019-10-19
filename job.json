@@ -7,6 +7,7 @@
         "username": "<your alias>"
     },
     "environmentVariables": {
+        "TOOLS_DIR": "/philly/rr3/gcradmin/<your alias>/tools/",
         "CODE_DIR": "/philly/rr3/gcradmin/<your alias>/src/",
         "DATA_DIR": "/philly/rr3/gcradmin/<your alias>/data/"
     },
