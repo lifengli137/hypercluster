@@ -1,0 +1,28 @@
+{
+    "version": "2019-09-19",
+    "metadata": {
+        "name": "<yous alias>-test-2-node-16-gpu-mpi",
+        "cluster": "rr3",
+        "vc": "gcradmin",
+        "username": "<your alias>"
+    },
+    "environmentVariables": {
+        "CODE_DIR": "/philly/rr3/gcradmin/<your alias>/src/",
+        "DATA_DIR": "/philly/rr3/gcradmin/<your alias>/data/"
+    },
+    "resources":{
+        "workers": {
+            "type": "skuResource",
+            "constraints": [
+                {
+                    "type": "uniqueConstraint",
+                    "tag": "connectivityDomain"
+                }
+            ],
+            "sku": "G16",
+            "count": 2,
+            "image": "phillyregistry.azurecr.io/philly/jobs/custom/pytorch:pytorch1.1.0-py36-cuda10-nccl",
+            "commandLine": "if [ $PHILLY_CONTAINER_INDEX -eq 0 ]; then $PHILLY_RUNTIME_UTILS/philly-mpirun -- -bind-to none -map-by slot -x NCCL_IB_DISABLE=0 -x NCCL_DEBUG=INFO $CODE_DIR/philly_start2.sh $CODE_DIR/resnet50-imagenet-philly-mpi.py; else bash -c \"/usr/sbin/sshd -p $PHILLY_CONTAINER_SSHD_PORT; sleep infinity\"; fi"
+        }
+    }
+}
