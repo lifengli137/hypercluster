@@ -195,9 +195,6 @@ if __name__ == "__main__":
     print("world_size: ", world_size, " world_rank: ", world_rank," dataloader:", data_loader_name) 
     dist.init_process_group(backend='nccl', rank=world_rank, world_size=world_size)
     num_workers = 4
-    data_path = os.environ['DATA_DIR']
-    output_path = os.environ['OUTPUT_DIR']
-    output_path += os.environ['PHILLY_JOB_ID']
     init_learning_rate = 0.128
     torch.manual_seed(1234)
     imagenet_train_dataset = make_imagenet_dataset(data_loader_name, train=True)
