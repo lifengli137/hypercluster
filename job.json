@@ -1,7 +1,7 @@
 {
     "version": "2019-09-19",
     "metadata": {
-        "name": "<yous alias>-test-2-node-16-gpu-mpi",
+        "name": "<your alias>-test-2-node-16-gpu-mpi",
         "cluster": "rr3",
         "vc": "gcradmin",
         "username": "<your alias>"
