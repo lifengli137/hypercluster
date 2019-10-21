@@ -3,7 +3,7 @@
     "metadata": {
         "name": "<your alias>-test-2-node-16-gpu-mpi",
         "cluster": "rr3",
-        "vc": "gcradmin",
+        "vc": "<your vc>",
         "username": "<your alias>"
     },
     "environmentVariables": {
