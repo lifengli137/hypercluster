@@ -198,6 +198,7 @@ if __name__ == "__main__":
     init_learning_rate = 0.128
     torch.manual_seed(1234)
     imagenet_train_dataset = make_imagenet_dataset(data_loader_name, train=True)
+    data_path = os.environ['DATA_DIR']
     train_set, train_sampler, data_size = imagenet_train_dataset(data_path, batch_size, num_workers)
     gpu_id = dist.get_rank() % torch.cuda.device_count()
     torch.cuda.set_device(gpu_id)
