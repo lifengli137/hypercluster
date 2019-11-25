@@ -11,4 +11,4 @@ export MASTER_PORT=$((master_port_start+7))
 echo $MASTER_ADDR
 echo $MASTER_PORT
 
-python3 $1
+python3 $1 $2 $3
