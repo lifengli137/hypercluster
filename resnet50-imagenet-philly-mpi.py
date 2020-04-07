@@ -277,7 +277,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
         tail = ".tar"
     elif data_loader_name == "InMemoryImageDataset":
         data_loader = InMemoryImageDataset
-    elif data_loader_name == "IndexInMemoryImageInDiskDataset"
+    elif data_loader_name == "IndexInMemoryImageInDiskDataset":
         data_loader = IndexInMemoryImageInDiskDataset
 
     # print("Dataloader: ", data_loader_name)
