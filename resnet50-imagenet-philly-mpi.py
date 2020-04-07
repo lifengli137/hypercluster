@@ -136,6 +136,53 @@ class InMemoryImageDataset(data.Dataset):
             tensor = self.transform(image)
         return tensor, self.metadatas[label]
 
+class IndexInMemoryImageInDiskDataset(data.Dataset):
+
+    def __init__(self, root, transform=None):
+
+
+        self.modes = ImageModes()
+        
+        self.transform = transform
+        metadata_path = root + ".metadata"
+        with open(metadata_path, 'rb') as metadataIn:
+            self.metadatas = pickle.load(metadataIn)
+        self.data_path = root + ".data"
+        self.imageIn = None
+
+    def __len__(self):
+        return int(len(self.metadatas)/6)
+
+    def __getitem__(self, index):
+        if self.imageIn is None:
+            self.imageIn = open(self.data_path, 'rb')
+            
+        OFFSET = 0
+        SIZE = 1
+        LABEL = 2
+        X = 3
+        Y = 4
+        MODE = 5
+        STRIP = 6
+        
+        offset = STRIP * index + OFFSET
+        size = STRIP * index + SIZE
+        label = STRIP * index + LABEL
+        x = STRIP * index + X
+        y = STRIP * index + Y
+        mode = STRIP * index + MODE
+        
+        self.imageIn.seek(self.metadatas[offset])
+        
+        image = self.imageIn.read(self.metadatas[size])
+        
+        
+        image = Image.frombytes(mode=self.modes.get_mode_by_index(self.metadatas[mode]), size=(self.metadatas[x], self.metadatas[y]), data=image)
+        image = image.convert('RGB')
+        if self.transform:
+            tensor = self.transform(image)
+        return tensor, self.metadatas[label]
+
 class ImageTarDataset(data.Dataset):
 
     def __init__(self, tar_file, transform=None):
@@ -230,6 +277,8 @@ def make_imagenet_dataset(data_loader_name, train=True):
         tail = ".tar"
     elif data_loader_name == "InMemoryImageDataset":
         data_loader = InMemoryImageDataset
+    elif data_loader_name == "IndexInMemoryImageInDiskDataset"
+        data_loader = IndexInMemoryImageInDiskDataset
 
     # print("Dataloader: ", data_loader_name)
     def imagenet_train_dataset(data_path, batch_size, num_workers):
