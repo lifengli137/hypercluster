@@ -22,6 +22,32 @@ import argparse
 import numpy as np
 from array import array
 
+
+class _RepeatSampler(object):
+
+    def __init__(self, sampler):
+        self.sampler = sampler
+
+    def __iter__(self):
+        while True:
+            yield from iter(self.sampler)
+
+
+class BetterDataLoader(torch.utils.data.dataloader.DataLoader):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        object.__setattr__(self, 'batch_sampler', _RepeatSampler(self.batch_sampler))
+        self.iterator = super().__iter__()
+
+    def __len__(self):
+        return len(self.batch_sampler.sampler)
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield next(self.iterator)
+            
+
 class ImageModes(object):
     def __init__(self):
         self.list_of_modes = ['1', 'L', 'P', 'RGB', 'RGBA', 'CMYK', 'YCbCr', 'LAB', 'HSV', 'I', 'F']
@@ -109,6 +135,7 @@ class InMemoryImageDataset(data.Dataset):
         if self.transform:
             tensor = self.transform(image)
         return tensor, label
+
 class ImageTarDataset(data.Dataset):
 
     def __init__(self, tar_file, transform=None):
@@ -219,7 +246,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
 
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
 
-        train_set = torch.utils.data.DataLoader(
+        train_set = BetterDataLoader(
             train_dataset, batch_size=batch_size,
             pin_memory=False, num_workers=num_workers,
             shuffle=False, sampler=train_sampler
@@ -239,7 +266,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
             ]))
-        val_set = torch.utils.data.DataLoader(
+        val_set = BetterDataLoader(
             val_dataset, batch_size=batch_size,
             pin_memory=False, num_workers=num_workers,
             shuffle=False)
@@ -250,6 +277,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
         return imagenet_train_dataset
     else:
         return imagenet_val_dataset
+
 
 
 def adjust_learning_rate(optimizer, epoch, init_learning_rate):
@@ -306,7 +334,7 @@ if __name__ == "__main__":
         model.train()
         train_sampler.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch, init_learning_rate)
-        epoch_loss = 0.0
+        #epoch_loss = 0.0
 
         accumulated = float()
         accumulated2 = float()
@@ -319,7 +347,7 @@ if __name__ == "__main__":
             time2 = pc()
             output = model(data)
             loss = criterion(output, target)
-            epoch_loss += loss.data.item()
+            #epoch_loss += loss.data.item()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
