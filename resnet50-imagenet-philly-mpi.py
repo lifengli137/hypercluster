@@ -21,7 +21,6 @@ from time import perf_counter as pc
 import argparse
 import numpy as np
 from array import array
-import psutil
 
 class ImageModes(object):
     def __init__(self):
@@ -54,8 +53,6 @@ class InMemoryImageDataset(data.Dataset):
         offset = 0
         self.count = 0     
         
-        self.mem_used=[]
-        self.mem_used.append(psutil.virtual_memory().used/1024**3)
 
         
         for category in categories_set:
@@ -81,16 +78,11 @@ class InMemoryImageDataset(data.Dataset):
                         offset += len(image_bytes)
                         
                     if self.count % 1000 == 0:
-                        mem = psutil.virtual_memory()
-                        print(f'{self.count:8} - {mem.percent:5} - {mem.free/1024**3:10.2f} - {mem.available/1024**3:10.2f} - {mem.used/1024**3:10.2f}')
-                        self.mem_used.append(mem.used/1024**3)
+                        print(f'{self.count:8}')
                     self.count += 1
 
         self.images = bytes(self.images)
         self.metadatas = array("Q", self.metadatas)
-        mem = psutil.virtual_memory()
-        print(f'{mem.percent:5} - {mem.free/1024**3:10.2f} - {mem.available/1024**3:10.2f} - {mem.used/1024**3:10.2f}')
-        self.mem_used.append(mem.used/1024**3)
 
     def __len__(self):
         return self.count
@@ -210,7 +202,6 @@ def make_imagenet_dataset(data_loader_name, train=True):
         data_loader = ImageTarDataset
         tail = ".tar"
     elif data_loader_name == "InMemoryImageDataset":
-        print("Here: ", InMemoryImageDataset)
         data_loader = InMemoryImageDataset
 
     # print("Dataloader: ", data_loader_name)
