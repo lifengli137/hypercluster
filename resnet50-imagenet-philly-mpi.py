@@ -19,7 +19,104 @@ from math import ceil
 from torch.nn.parallel import DistributedDataParallel as DDP
 from time import perf_counter as pc
 import argparse
+import numpy as np
+from array import array
+import psutil
 
+class ImageModes(object):
+    def __init__(self):
+        self.list_of_modes = ['1', 'L', 'P', 'RGB', 'RGBA', 'CMYK', 'YCbCr', 'LAB', 'HSV', 'I', 'F']
+        self.dict_of_modes = {}
+        for index, mode in enumerate(self.list_of_modes):
+            self.dict_of_modes[mode] = index
+            
+    def get_mode_by_index(self, index):
+        return self.list_of_modes[index]
+    
+    def get_index_by_mode(self, mode):
+        return self.dict_of_modes[mode]
+
+class InMemoryImageDataset(data.Dataset):
+
+    def __init__(self, root, transform=None):
+
+
+        self.modes = ImageModes()
+        
+        self.transform = transform
+        categories_set = [d.name for d in os.scandir(root) if d.is_dir()]
+        categories_set.sort()
+        index = 0
+        self.categories = {}
+        self.images = bytearray()
+        self.metadatas = []
+
+        offset = 0
+        self.count = 0     
+        
+        self.mem_used=[]
+        self.mem_used.append(psutil.virtual_memory().used/1024**3)
+
+        
+        for category in categories_set:
+            self.categories[category] = index
+            index += 1
+
+        for target in self.categories.keys():
+            d = os.path.join(root, target)
+            if not os.path.isdir(d):
+                continue
+            for r, _, file_names in os.walk(d):
+                for file_name in sorted(file_names):
+                    file_path = os.path.join(r, file_name)
+                    with Image.open(file_path) as image:
+                        image_bytes = image.tobytes()
+                        self.images += image_bytes
+                        self.metadatas.append(offset)
+                        self.metadatas.append(len(image_bytes))
+                        self.metadatas.append(self.categories[target])
+                        self.metadatas.append(image.size[0])
+                        self.metadatas.append(image.size[1])
+                        self.metadatas.append(self.modes.get_index_by_mode(image.mode))
+                        offset += len(image_bytes)
+                        
+                    if self.count % 1000 == 0:
+                        mem = psutil.virtual_memory()
+                        print(f'{self.count:8} - {mem.percent:5} - {mem.free/1024**3:10.2f} - {mem.available/1024**3:10.2f} - {mem.used/1024**3:10.2f}')
+                        self.mem_used.append(mem.used/1024**3)
+                    self.count += 1
+
+        self.images = bytes(self.images)
+        self.metadatas = array("Q", self.metadatas)
+        mem = psutil.virtual_memory()
+        print(f'{mem.percent:5} - {mem.free/1024**3:10.2f} - {mem.available/1024**3:10.2f} - {mem.used/1024**3:10.2f}')
+        self.mem_used.append(mem.used/1024**3)
+
+    def __len__(self):
+        return self.count
+
+    def __getitem__(self, index):
+        OFFSET = 0
+        SIZE = 1
+        LABEL = 2
+        X = 3
+        Y = 4
+        MODE = 5
+        STRIP = 6
+        
+        offset = STRIP * index + OFFSET
+        size = STRIP * index + SIZE
+        label = STRIP * index + LABEL
+        x = STRIP * index + X
+        y = STRIP * index + Y
+        mode = STRIP * index + MODE
+        
+
+        image = Image.frombytes(mode=self.modes.get_mode_by_index(self.metadatas[mode]), size=(self.metadatas[x], self.metadatas[y]), data=self.images[self.metadatas[offset]:self.metadatas[offset]+self.metadatas[size]])
+        image = image.convert('RGB')
+        if self.transform:
+            tensor = self.transform(image)
+        return tensor, label
 class ImageTarDataset(data.Dataset):
 
     def __init__(self, tar_file, transform=None):
@@ -112,6 +209,8 @@ def make_imagenet_dataset(data_loader_name, train=True):
     elif data_loader_name == "ImageTarDataset":
         data_loader = ImageTarDataset
         tail = ".tar"
+    elif data_loader_name == "InMemoryImageDataset":
+        data_loader == InMemoryImageDataset
 
     # print("Dataloader: ", data_loader_name)
     def imagenet_train_dataset(data_path, batch_size, num_workers):
@@ -262,9 +361,3 @@ if __name__ == "__main__":
             print("Epoch: ", epoch, ", total rate: ", rate_total, " images/sec",
                     " GPU and bus rate: ", rate_gpu_bus, " images/sec",
                     " GPU only rate:", rate_gpu, " images/sec", " elapsed time per batch: (ms)", elapsed_time)
-
-
-
-
-
-
