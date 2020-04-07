@@ -78,7 +78,7 @@ class InMemoryImageDataset(data.Dataset):
                         offset += len(image_bytes)
                         
                     if self.count % 1000 == 0:
-                        print(f'{self.count:8}')
+                        print(f'Load: {self.count:8}')
                     self.count += 1
 
         self.images = bytes(self.images)
