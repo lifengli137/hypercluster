@@ -21,7 +21,7 @@ from time import perf_counter as pc
 import argparse
 import numpy as np
 from array import array
-
+import pickle
 
 class _RepeatSampler(object):
 
