@@ -50,7 +50,7 @@ class BetterDataLoader(torch.utils.data.dataloader.DataLoader):
             yield next(self.iterator)
 
 
-class PrefetchDataLoader(object):
+class PrefetchedDataLoader(object):
 
 
     def __init__(self, dataloader):
@@ -334,7 +334,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
             shuffle=False, sampler=train_sampler
         )
 
-        return PrefetchedWrapper(train_set), train_sampler, len(train_dataset)
+        return PrefetchedDataLoader(train_set), train_sampler, len(train_dataset)
 
     def imagenet_val_dataset(data_path, batch_size, num_workers):
         val_data_path = data_path + "/val" + tail
@@ -353,7 +353,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
             pin_memory=False, num_workers=num_workers,
             shuffle=False)
 
-        return PrefetchedWrapper(val_set)
+        return PrefetchedDataLoader(val_set)
 
     if train == True:
         return imagenet_train_dataset
@@ -413,7 +413,7 @@ if __name__ == "__main__":
         momentum=0.875, weight_decay=3.0517578125e-05
     )
 
-    for epoch in range(100):
+    for epoch in range(10):
         nvtx.range_push('epoch')
         nvtx.range_push('set_train')
         model.train()
