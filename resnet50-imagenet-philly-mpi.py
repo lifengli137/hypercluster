@@ -297,7 +297,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
 
         train_set = BetterDataLoader(
             train_dataset, batch_size=batch_size,
-            pin_memory=True, num_workers=num_workers,
+            pin_memory=False, num_workers=num_workers,
             shuffle=False, sampler=train_sampler
         )
 
@@ -317,7 +317,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
             ]))
         val_set = BetterDataLoader(
             val_dataset, batch_size=batch_size,
-            pin_memory=True, num_workers=num_workers,
+            pin_memory=False, num_workers=num_workers,
             shuffle=False)
 
         return val_set
