@@ -353,6 +353,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="ImageTarDataset")
     parser.add_argument("--batch", type=int, default=256)
+    parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
 
     world_size = get_global_size()
@@ -362,7 +363,7 @@ if __name__ == "__main__":
     print(os.environ['MASTER_ADDR'], " ", os.environ.get('MASTER_PORT'))
     print("world_size: ", world_size, " world_rank: ", world_rank," dataloader:", data_loader_name) 
     dist.init_process_group(backend='nccl', rank=world_rank, world_size=world_size)
-    num_workers = 3
+    num_workers = args.workers
     init_learning_rate = 0.128
     torch.manual_seed(1234)
     imagenet_train_dataset = make_imagenet_dataset(data_loader_name, train=True)
