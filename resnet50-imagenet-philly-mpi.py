@@ -48,6 +48,37 @@ class BetterDataLoader(torch.utils.data.dataloader.DataLoader):
             yield next(self.iterator)
 
 
+class PrefetchedWrapper(object):
+    def prefetched_loader(loader):
+
+        stream = torch.cuda.Stream()
+        first = True
+
+        for next_input, next_target in loader:
+            with torch.cuda.stream(stream):
+                next_input = next_input.cuda(non_blocking=True)
+                next_target = next_target.cuda(non_blocking=True)
+            if not first:
+                yield input, target
+            else:
+                first = False
+
+            torch.cuda.current_stream().wait_stream(stream)
+            input = next_input
+            target = next_target
+
+        yield input, target
+
+    def __init__(self, dataloader):
+        self.dataloader = dataloader
+
+    def __len__(self):
+        return len(self.dataloader)
+
+    def __iter__(self):
+        return PrefetchedWrapper.prefetched_loader(self.dataloader)
+
+
 class ImageModes(object):
     def __init__(self):
         self.list_of_modes = ['1', 'L', 'P', 'RGB', 'RGBA', 'CMYK', 'YCbCr', 'LAB', 'HSV', 'I', 'F']
@@ -301,7 +332,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
             shuffle=False, sampler=train_sampler
         )
 
-        return train_set, train_sampler, len(train_dataset)
+        return PrefetchedWrapper(train_set), train_sampler, len(train_dataset)
 
     def imagenet_val_dataset(data_path, batch_size, num_workers):
         val_data_path = data_path + "/val" + tail
@@ -320,7 +351,7 @@ def make_imagenet_dataset(data_loader_name, train=True):
             pin_memory=False, num_workers=num_workers,
             shuffle=False)
 
-        return val_set
+        return PrefetchedWrapper(val_set)
 
     if train == True:
         return imagenet_train_dataset
@@ -392,8 +423,8 @@ if __name__ == "__main__":
         for idx, (data, target) in enumerate(train_set):
             # pass
             time1 = pc()
-            data = data.cuda()
-            target = target.cuda()
+            #data = data.cuda()
+            #target = target.cuda()
             time2 = pc()
             output = model(data)
             loss = criterion(output, target)
