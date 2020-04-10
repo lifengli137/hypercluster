@@ -19,9 +19,11 @@ from math import ceil
 from torch.nn.parallel import DistributedDataParallel as DDP
 from time import perf_counter as pc
 import argparse
+import torch.cuda.nvtx as nvtx
 import numpy as np
 from array import array
 import pickle
+
 
 class _RepeatSampler(object):
 
@@ -48,14 +50,23 @@ class BetterDataLoader(torch.utils.data.dataloader.DataLoader):
             yield next(self.iterator)
 
 
-class PrefetchedWrapper(object):
-    def prefetched_loader(loader):
+class PrefetchDataLoader(object):
 
-        stream = torch.cuda.Stream()
+
+    def __init__(self, dataloader):
+        self.dataloader = dataloader
+        self.stream = None
+
+    def __len__(self):
+        return len(self.dataloader)
+
+    def __iter__(self):
+        if self.stream is None:
+            self.stream = torch.cuda.Stream()
         first = True
 
-        for next_input, next_target in loader:
-            with torch.cuda.stream(stream):
+        for next_input, next_target in self.dataloader:
+            with torch.cuda.stream(self.stream):
                 next_input = next_input.cuda(non_blocking=True)
                 next_target = next_target.cuda(non_blocking=True)
             if not first:
@@ -63,20 +74,11 @@ class PrefetchedWrapper(object):
             else:
                 first = False
 
-            torch.cuda.current_stream().wait_stream(stream)
+            torch.cuda.current_stream().wait_stream(self.stream)
             input = next_input
             target = next_target
 
         yield input, target
-
-    def __init__(self, dataloader):
-        self.dataloader = dataloader
-
-    def __len__(self):
-        return len(self.dataloader)
-
-    def __iter__(self):
-        return PrefetchedWrapper.prefetched_loader(self.dataloader)
 
 
 class ImageModes(object):
@@ -411,29 +413,55 @@ if __name__ == "__main__":
         momentum=0.875, weight_decay=3.0517578125e-05
     )
 
-    for epoch in range(10):
+    for epoch in range(100):
+        nvtx.range_push('epoch')
+        nvtx.range_push('set_train')
         model.train()
+        nvtx.range_pop() # set train
+        nvtx.range_push('set_epoch')
         train_sampler.set_epoch(epoch)
+        nvtx.range_pop() # set epoch
+        nvtx.range_push('adjust_lr')
         adjust_learning_rate(optimizer, epoch, init_learning_rate)
+        nvtx.range_pop() # adjust lr
         #epoch_loss = 0.0
 
         accumulated = float()
         accumulated2 = float()
         time0 = pc()
+        
         for idx, (data, target) in enumerate(train_set):
+            nvtx.range_push('iteration')
             # pass
             time1 = pc()
             #data = data.cuda()
             #target = target.cuda()
             time2 = pc()
+
+            nvtx.range_push('forward')
             output = model(data)
+            nvtx.range_pop() # forward
+
+            nvtx.range_push('loss')
             loss = criterion(output, target)
+            nvtx.range_pop() # loss
+
             #epoch_loss += loss.data.item()
+            nvtx.range_push('zero')
             optimizer.zero_grad()
-            loss.backward()
+            nvtx.range_pop() # zero
+
+            nvtx.range_push('backward')
+            loss.backward() 
+            nvtx.range_pop() # backward
+
+            nvtx.range_push('optimizer')
             optimizer.step()
+            nvtx.range_pop() # optimizer
+
             accumulated2 += pc() - time2
             accumulated += pc() - time1
+            nvtx.range_pop() # per iteration
 
         diff = pc() - time0
         tensor_diff = torch.tensor([diff])
@@ -462,3 +490,5 @@ if __name__ == "__main__":
             print("Epoch: ", epoch, ", total rate: ", rate_total, " images/sec",
                     " GPU and bus rate: ", rate_gpu_bus, " images/sec",
                     " GPU only rate:", rate_gpu, " images/sec", " elapsed time per batch: (ms)", elapsed_time)
+
+        nvtx.range_pop() # per epoch
