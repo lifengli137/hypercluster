@@ -380,7 +380,7 @@ if __name__ == "__main__":
         momentum=0.875, weight_decay=3.0517578125e-05
     )
 
-    for epoch in range(100):
+    for epoch in range(10):
         model.train()
         train_sampler.set_epoch(epoch)
         adjust_learning_rate(optimizer, epoch, init_learning_rate)
