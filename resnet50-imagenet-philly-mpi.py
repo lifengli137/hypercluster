@@ -24,6 +24,8 @@ import numpy as np
 from array import array
 import pickle
 
+pin_memory = False
+shared_memory = False
 
 class _RepeatSampler(object):
 
@@ -41,16 +43,22 @@ class BetterDataLoader(torch.utils.data.dataloader.DataLoader):
         super().__init__(*args, **kwargs)
         object.__setattr__(self, 'batch_sampler', _RepeatSampler(self.batch_sampler))
         self.iterator = super().__iter__()
+ 
 
     def __len__(self):
         return len(self.batch_sampler.sampler)
 
     def __iter__(self):
         for i in range(len(self)):
-            yield next(self.iterator)
+            #yield next(self.iterator)
+            next_input, next_target = next(self.iterator)
+            if pin_memory:
+                next_input = next_input.pin_memory()
+                next_target = next_target.pin_memory()
+            yield next_input, next_target
 
 
-class PrefetchedDataLoader(object):
+class SoftwarePipeline(object):
 
 
     def __init__(self, dataloader):
@@ -99,52 +107,20 @@ class InMemoryImageDataset(data.Dataset):
     def __init__(self, root, transform=None):
 
 
+
         self.modes = ImageModes()
         
         self.transform = transform
-        categories_set = [d.name for d in os.scandir(root) if d.is_dir()]
-        categories_set.sort()
-        index = 0
-        self.categories = {}
-        self.images = bytearray()
-        self.metadatas = []
+        metadata_path = root + ".metadata"
+        with open(metadata_path, 'rb') as metadataIn:
+            self.metadatas = pickle.load(metadataIn)
+        self.data_path = root + ".data"
+        with open(self.data_path, 'rb') as imageIn:
+            self.images = bytes(imageIn.read())
 
-        offset = 0
-        self.count = 0     
-        
-
-        
-        for category in categories_set:
-            self.categories[category] = index
-            index += 1
-
-        for target in self.categories.keys():
-            d = os.path.join(root, target)
-            if not os.path.isdir(d):
-                continue
-            for r, _, file_names in os.walk(d):
-                for file_name in sorted(file_names):
-                    file_path = os.path.join(r, file_name)
-                    with Image.open(file_path) as image:
-                        image_bytes = image.tobytes()
-                        self.images += image_bytes
-                        self.metadatas.append(offset)
-                        self.metadatas.append(len(image_bytes))
-                        self.metadatas.append(self.categories[target])
-                        self.metadatas.append(image.size[0])
-                        self.metadatas.append(image.size[1])
-                        self.metadatas.append(self.modes.get_index_by_mode(image.mode))
-                        offset += len(image_bytes)
-                        
-                    if self.count % 1000 == 0:
-                        print(f'Load: {self.count:8}')
-                    self.count += 1
-
-        self.images = bytes(self.images)
-        self.metadatas = array("Q", self.metadatas)
 
     def __len__(self):
-        return self.count
+        return int(len(self.metadatas)/6)
 
     def __getitem__(self, index):
         OFFSET = 0
@@ -166,8 +142,15 @@ class InMemoryImageDataset(data.Dataset):
         image = Image.frombytes(mode=self.modes.get_mode_by_index(self.metadatas[mode]), size=(self.metadatas[x], self.metadatas[y]), data=self.images[self.metadatas[offset]:self.metadatas[offset]+self.metadatas[size]])
         image = image.convert('RGB')
         if self.transform:
-            tensor = self.transform(image)
-        return tensor, self.metadatas[label]
+            image_tensor = self.transform(image)
+            
+        
+        label_tensor = torch.tensor(self.metadatas[label])
+        if shared_memory:
+            image_tensor.share_memory_()
+            label_tensor.share_memory_()
+        
+        return image_tensor, label_tensor
 
 class IndexInMemoryImageInDiskDataset(data.Dataset):
 
@@ -213,8 +196,12 @@ class IndexInMemoryImageInDiskDataset(data.Dataset):
         image = Image.frombytes(mode=self.modes.get_mode_by_index(self.metadatas[mode]), size=(self.metadatas[x], self.metadatas[y]), data=image)
         image = image.convert('RGB')
         if self.transform:
-            tensor = self.transform(image)
-        return tensor, self.metadatas[label]
+            image_tensor = self.transform(image)
+            image_tensor.share_memory_()
+        
+        label_tensor = torch.tensor(self.metadatas[label])
+        label_tensor.share_memory_()
+        return image_tensor, label_tensor
 
 class ImageTarDataset(data.Dataset):
 
@@ -259,9 +246,16 @@ class ImageTarDataset(data.Dataset):
         sample = Image.open(sample)
         sample = sample.convert('RGB')
         if self.transform:
-            sample = self.transform(sample)
+            image_tensor = self.transform(sample)
+            image_tensor.share_memory_()
         category = self.categories[self.get_category_from_filename(self.tar_members[index].name)]
-        return sample, category
+        label_tensor = torch.tensor(category)
+
+        if shared_memory:
+            image_tensor.share_memory_()
+            label_tensor.share_memory_()
+
+        return image_tensor, label_tensor
 
 
 class ImageFolderDataset(data.Dataset):
@@ -297,26 +291,40 @@ class ImageFolderDataset(data.Dataset):
             sample = Image.open(f)
             sample = sample.convert('RGB')
             if self.transform:
-                sample = self.transform(sample)
-            return sample, target
+                image_tensor = self.transform(sample)
+                image_tensor.share_memory_()
+        label_tensor = torch.tensor(target)
+
+        if shared_memory:
+            image_tensor.share_memory_()
+            label_tensor.share_memory_()
+        return image_tensor, label_tensor
 
 
-def make_imagenet_dataset(data_loader_name, train=True):
+def make_imagenet_dataset(dataset_name, train=True, dataloader=False):
+
+    if dataloader:
+        dataloader = BetterDataLoader
+    else:
+        dataloader = torch.utils.data.DataLoader
+
+
     tail = ""
-    if data_loader_name == "ImageFolderDataset":
-        data_loader = ImageFolderDataset
-    elif data_loader_name == "ImageTarDataset":
-        data_loader = ImageTarDataset
+    if dataset_name == "ImageFolderDataset":
+        dataset = ImageFolderDataset
+    elif dataset_name == "ImageTarDataset":
+        dataset = ImageTarDataset
         tail = ".tar"
-    elif data_loader_name == "InMemoryImageDataset":
-        data_loader = InMemoryImageDataset
-    elif data_loader_name == "IndexInMemoryImageInDiskDataset":
-        data_loader = IndexInMemoryImageInDiskDataset
+    elif dataset_name == "InMemoryImageDataset":
+        dataset = InMemoryImageDataset
+    elif dataset_name == "IndexInMemoryImageInDiskDataset":
+        dataset = IndexInMemoryImageInDiskDataset
 
-    # print("Dataloader: ", data_loader_name)
+    
+    # print("Dataloader: ", dataset)
     def imagenet_train_dataset(data_path, batch_size, num_workers):
         train_data_path = data_path + "/train" + tail
-        train_dataset = data_loader(
+        train_dataset = dataset(
             train_data_path,
             transforms.Compose([
                 transforms.RandomResizedCrop(224),
@@ -328,18 +336,18 @@ def make_imagenet_dataset(data_loader_name, train=True):
 
         train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
 
-        train_set = BetterDataLoader(
+        train_set = dataloader(
             train_dataset, batch_size=batch_size,
             pin_memory=False, num_workers=num_workers,
             shuffle=False, sampler=train_sampler
         )
 
-        return PrefetchedDataLoader(train_set), train_sampler, len(train_dataset)
+        return train_set, train_sampler, len(train_dataset)
 
     def imagenet_val_dataset(data_path, batch_size, num_workers):
         val_data_path = data_path + "/val" + tail
 
-        val_dataset = data_loader(
+        val_dataset = dataset(
             val_data_path,
             transforms.Compose([
                 transforms.Resize(256),
@@ -348,12 +356,12 @@ def make_imagenet_dataset(data_loader_name, train=True):
                 transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
             ]))
-        val_set = BetterDataLoader(
+        val_set = dataloader(
             val_dataset, batch_size=batch_size,
             pin_memory=False, num_workers=num_workers,
             shuffle=False)
-
-        return PrefetchedDataLoader(val_set)
+        
+        return val_set
 
     if train == True:
         return imagenet_train_dataset
@@ -387,21 +395,31 @@ if __name__ == "__main__":
     parser.add_argument("--dataset", type=str, default="ImageTarDataset")
     parser.add_argument("--batch", type=int, default=256)
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--pin_memory", type=int, default=0)
+    parser.add_argument("--shared_memory", type=int, default=0)
+    parser.add_argument("--pipeline", type=int, default=0)
+    parser.add_argument("--dataloader", type=int, default=0)
     args = parser.parse_args()
+    pin_memory = args.pin_memory
+    shared_memory = args.shared_memory
 
     world_size = get_global_size()
     world_rank = get_global_rank()
-    data_loader_name = args.dataset
+    dataset = args.dataset
     batch_size = args.batch
     print(os.environ['MASTER_ADDR'], " ", os.environ.get('MASTER_PORT'))
-    print("world_size: ", world_size, " world_rank: ", world_rank," dataloader:", data_loader_name) 
+    print("world_size: ", world_size, " world_rank: ", world_rank," dataset:", dataset) 
     dist.init_process_group(backend='nccl', rank=world_rank, world_size=world_size)
     num_workers = args.workers
     init_learning_rate = 0.128
     torch.manual_seed(1234)
-    imagenet_train_dataset = make_imagenet_dataset(data_loader_name, train=True)
+    imagenet_train_dataset = make_imagenet_dataset(dataset, train=True, dataloader=args.dataloader)
     data_path = os.environ['DATA_DIR']
     train_set, train_sampler, data_size = imagenet_train_dataset(data_path, batch_size, num_workers)
+
+    if args.pipeline:
+        train_set = SoftwarePipeline(train_set)
+
     gpu_id = dist.get_rank() % torch.cuda.device_count()
     torch.cuda.set_device(gpu_id)
     model = models.__dict__["resnet50"]()
@@ -415,28 +433,28 @@ if __name__ == "__main__":
 
     for epoch in range(10):
         nvtx.range_push('epoch')
+        
         nvtx.range_push('set_train')
         model.train()
         nvtx.range_pop() # set train
+        
         nvtx.range_push('set_epoch')
         train_sampler.set_epoch(epoch)
         nvtx.range_pop() # set epoch
+        
         nvtx.range_push('adjust_lr')
         adjust_learning_rate(optimizer, epoch, init_learning_rate)
         nvtx.range_pop() # adjust lr
-        #epoch_loss = 0.0
 
-        accumulated = float()
-        accumulated2 = float()
         time0 = pc()
         
         for idx, (data, target) in enumerate(train_set):
             nvtx.range_push('iteration')
-            # pass
-            time1 = pc()
-            #data = data.cuda()
-            #target = target.cuda()
-            time2 = pc()
+
+            nvtx.range_push('copy')
+            data = data.cuda()
+            target = target.cuda()
+            nvtx.range_pop() # copy
 
             nvtx.range_push('forward')
             output = model(data)
@@ -446,7 +464,6 @@ if __name__ == "__main__":
             loss = criterion(output, target)
             nvtx.range_pop() # loss
 
-            #epoch_loss += loss.data.item()
             nvtx.range_push('zero')
             optimizer.zero_grad()
             nvtx.range_pop() # zero
@@ -459,36 +476,9 @@ if __name__ == "__main__":
             optimizer.step()
             nvtx.range_pop() # optimizer
 
-            accumulated2 += pc() - time2
-            accumulated += pc() - time1
             nvtx.range_pop() # per iteration
 
-        diff = pc() - time0
-        tensor_diff = torch.tensor([diff])
-        tensor_diff = tensor_diff.cuda()
-        dist.all_reduce(tensor_diff.data, op=dist.ReduceOp.SUM)
-
-        tensor_accumulated = torch.tensor([accumulated])
-        tensor_accumulated = tensor_accumulated.cuda()
-        dist.all_reduce(tensor_accumulated.data, op=dist.ReduceOp.SUM)
-
-        tensor_accumulated2 = torch.tensor([accumulated2])
-        tensor_accumulated2 = tensor_accumulated2.cuda()
-        dist.all_reduce(tensor_accumulated2.data, op=dist.ReduceOp.SUM)
-
         if dist.get_rank() == 0:
-            diff = (tensor_diff.data / float(dist.get_world_size()))
-            accumulated = (tensor_accumulated.data / float(dist.get_world_size()))
-            accumulated2 = (tensor_accumulated2.data / float(dist.get_world_size()))
-            diff = diff.tolist()[0]
-            accumulated = accumulated.tolist()[0]
-            accumulated2 = accumulated2.tolist()[0]
-            rate_total = int(data_size / diff)
-            rate_gpu_bus = int(data_size / accumulated)
-            rate_gpu = int(data_size / accumulated2)
-            elapsed_time = round(accumulated / len(train_set) * 1000, 2)
-            print("Epoch: ", epoch, ", total rate: ", rate_total, " images/sec",
-                    " GPU and bus rate: ", rate_gpu_bus, " images/sec",
-                    " GPU only rate:", rate_gpu, " images/sec", " elapsed time per batch: (ms)", elapsed_time)
+            print(f'Epoch: {epoch:8} - Loss: {loss:5.2f} - Througput: {1/((pc() - time0)/data_size): 8.2f} images/sec')
 
         nvtx.range_pop() # per epoch
