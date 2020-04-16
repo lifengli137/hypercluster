@@ -415,7 +415,7 @@ if __name__ == "__main__":
     batch_size = args.batch
     print(os.environ['MASTER_ADDR'], " ", os.environ.get('MASTER_PORT'))
     print("world_size: ", world_size, " world_rank: ", world_rank," dataset:", dataset) 
-    dist.init_process_group(backend='nccl', init_method=init_method， rank=world_rank, world_size=world_size)
+    dist.init_process_group(backend='nccl', init_method=init_method, rank=world_rank, world_size=world_size)
     num_workers = args.workers
     init_learning_rate = 0.128
     torch.manual_seed(1234)
