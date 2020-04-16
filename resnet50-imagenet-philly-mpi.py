@@ -26,7 +26,6 @@ import pickle
 
 pin_memory = False
 shared_memory = False
-
 class _RepeatSampler(object):
 
     def __init__(self, sampler):
@@ -53,8 +52,8 @@ class BetterDataLoader(torch.utils.data.dataloader.DataLoader):
             #yield next(self.iterator)
             next_input, next_target = next(self.iterator)
             if pin_memory:
-                next_input = next_input.pin_memory()
-                next_target = next_target.pin_memory()
+                next_input.pin_memory()
+                next_target.pin_memory()
             yield next_input, next_target
 
 
@@ -197,10 +196,13 @@ class IndexInMemoryImageInDiskDataset(data.Dataset):
         image = image.convert('RGB')
         if self.transform:
             image_tensor = self.transform(image)
-            image_tensor.share_memory_()
+            
         
         label_tensor = torch.tensor(self.metadatas[label])
-        label_tensor.share_memory_()
+
+        if shared_memory:
+            image_tensor.share_memory_()
+            label_tensor.share_memory_()
         return image_tensor, label_tensor
 
 class ImageTarDataset(data.Dataset):
@@ -399,23 +401,28 @@ if __name__ == "__main__":
     parser.add_argument("--shared_memory", type=int, default=0)
     parser.add_argument("--pipeline", type=int, default=0)
     parser.add_argument("--dataloader", type=int, default=0)
+    parser.add_argument("--master_addr", type=str, default="127.0.0.1")
+    parser.add_argument("--master_port", type=str, default="45566")
+    parser.add_argument("--data_dir", type=str, default="")
+
     args = parser.parse_args()
     pin_memory = args.pin_memory
     shared_memory = args.shared_memory
-
+    init_method = "tcp://" + master_addr + ":" + master_port
     world_size = get_global_size()
     world_rank = get_global_rank()
     dataset = args.dataset
     batch_size = args.batch
     print(os.environ['MASTER_ADDR'], " ", os.environ.get('MASTER_PORT'))
     print("world_size: ", world_size, " world_rank: ", world_rank," dataset:", dataset) 
-    dist.init_process_group(backend='nccl', rank=world_rank, world_size=world_size)
+    dist.init_process_group(backend='nccl', init_method=init_method， rank=world_rank, world_size=world_size)
     num_workers = args.workers
     init_learning_rate = 0.128
     torch.manual_seed(1234)
     imagenet_train_dataset = make_imagenet_dataset(dataset, train=True, dataloader=args.dataloader)
-    data_path = os.environ['DATA_DIR']
-    train_set, train_sampler, data_size = imagenet_train_dataset(data_path, batch_size, num_workers)
+    #data_path = os.environ['DATA_DIR']
+    
+    train_set, train_sampler, data_size = imagenet_train_dataset(data_dir, batch_size, num_workers)
 
     if args.pipeline:
         train_set = SoftwarePipeline(train_set)
