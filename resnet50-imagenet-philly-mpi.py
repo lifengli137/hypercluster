@@ -408,7 +408,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     pin_memory = args.pin_memory
     shared_memory = args.shared_memory
-    init_method = "tcp://" + master_addr + ":" + master_port
+    init_method = "tcp://" + args.master_addr + ":" + args.master_port
     world_size = get_global_size()
     world_rank = get_global_rank()
     dataset = args.dataset
@@ -422,7 +422,7 @@ if __name__ == "__main__":
     imagenet_train_dataset = make_imagenet_dataset(dataset, train=True, dataloader=args.dataloader)
     #data_path = os.environ['DATA_DIR']
     
-    train_set, train_sampler, data_size = imagenet_train_dataset(data_dir, batch_size, num_workers)
+    train_set, train_sampler, data_size = imagenet_train_dataset(args.data_dir, batch_size, num_workers)
 
     if args.pipeline:
         train_set = SoftwarePipeline(train_set)
