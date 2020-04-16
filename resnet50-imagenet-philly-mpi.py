@@ -413,7 +413,7 @@ if __name__ == "__main__":
     world_rank = get_global_rank()
     dataset = args.dataset
     batch_size = args.batch
-    print(os.environ['MASTER_ADDR'], " ", os.environ.get('MASTER_PORT'))
+    #print(os.environ['MASTER_ADDR'], " ", os.environ.get('MASTER_PORT'))
     print("world_size: ", world_size, " world_rank: ", world_rank," dataset:", dataset) 
     dist.init_process_group(backend='nccl', init_method=init_method, rank=world_rank, world_size=world_size)
     num_workers = args.workers
