@@ -404,7 +404,7 @@ if __name__ == "__main__":
     parser.add_argument("--master_addr", type=str, default="127.0.0.1")
     parser.add_argument("--master_port", type=str, default="45566")
     parser.add_argument("--data_dir", type=str, default="")
-    parser.add_argument("--epoch", type=int, default=1)
+    parser.add_argument("--epochs", type=int, default=1)
 
     args = parser.parse_args()
     pin_memory = args.pin_memory
@@ -439,7 +439,7 @@ if __name__ == "__main__":
         momentum=0.875, weight_decay=3.0517578125e-05
     )
 
-    for epoch in range(10):
+    for epoch in range(args.epochs):
         nvtx.range_push('epoch')
         
         nvtx.range_push('set_train')
