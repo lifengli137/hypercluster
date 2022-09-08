@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15 mpirun --allow-run-as-root -np 16 -mca pml ucx --mca btl ^vader,tcp,openib -x LD_LIBRARY_PATH=/opt/nccl-2.8.4-1/build/lib /opt/nccl-tests-2.11.0/build/alltoall_perf -b 2G -e 2G -c 1 -w 20 -n 50; 
